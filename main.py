@@ -34,6 +34,10 @@ class MainWindow(QMainWindow):
         self.template_worker = game.Worker()
         self.t_start=[None]*self.nthread
         self.isRunning=[False]*self.nthread
+        
+        # Initialize Devices
+        self.devices = [action.DeviceController(i, partial(self.update_text_browser, thread_id=i)) for i in range(self.nthread)]
+        
         # Create tabs and load the same UI file into each
         for i in range(self.nthread):
             self.tab[i]=loadUi('main.ui')
@@ -52,21 +56,30 @@ class MainWindow(QMainWindow):
         #self.tabWidget.currentChanged.connect(self.tab_changed)
         # Set the tab widget as the central widget
         self.setCentralWidget(self.tabWidget)
-        #自动检测ADB设备
-        action.init_thread_variable(nthread)
+        #自动检测ADB设备 已移除 init_thread_variable
 
     #清空日志按键
     def click_clear(self,thread_id):
         self.tab[thread_id].textBrowser.clear()
     #更新日志按键
-    def update_text_browser(self,text,thread_id):
-        self.tab[thread_id].textBrowser.append(text)
+    def update_text_browser(self, text, thread_id=None):
+        if thread_id is None:
+             # Try to guess or just print? DeviceController sends thread_id usually? 
+             # Wait, DeviceController logger was set with partial(..., thread_id=i)
+             pass 
+        self.tab[thread_id].textBrowser.append(str(text))
     #连接/断开按键
     def click_restart(self,thread_id):
-        if action.devices_tab[thread_id]==None:
-            action.startup(self)
+        device = self.devices[thread_id]
+        if not device.is_adb and not device.serial:
+            device.connect(self)
+            if device.is_adb:
+                self.tabWidget.setTabText(thread_id, f'设备{thread_id+1}：{device.serial}')
+                self.tab[thread_id].pushButton_restart.setText('断开ADB')
         else:
-            action.reset_resolution(self)
+            device.disconnect()
+            self.tabWidget.setTabText(thread_id, f'设备{thread_id+1}：桌面版')
+            self.tab[thread_id].pushButton_restart.setText('连接ADB')
     #选择脚本同时设置默认次数
     def click_list(self,thread_id):
         lineEdit=self.tab[thread_id].lineEdit
@@ -135,7 +148,8 @@ class MainWindow(QMainWindow):
                 self.t_start[thread_id]=time.time()
                 self.threads[thread_id] = QThread()
                 #加载脚本和指定功能
-                self.workers[thread_id]=game.Worker(thread_id)
+                # PASS DEVICE INSTANCE
+                self.workers[thread_id]=game.Worker(thread_id, device=self.devices[thread_id])
                 self.workers[thread_id].index=index
                 self.workers[thread_id].cishu_max=cishu_max
                 #初始化线程任务
@@ -190,7 +204,11 @@ class MainWindow(QMainWindow):
         from PyQt6.QtGui import QPixmap, QImage
         textBrowser=self.tab[thread_id].textBrowser
         #截屏
-        screen=action.screenshot(thread_id)
+        screen=self.devices[thread_id].screenshot()
+        if screen is None:
+            textBrowser.append('截屏失败')
+            return
+            
         textBrowser.append('截图分辨率: '+str(screen.shape[1])+'x'+str(screen.shape[0]))
         screen = screen[0:screen.shape[0], 0:screen.shape[1]]
         h, w, ch = screen.shape
@@ -248,7 +266,6 @@ if __name__ == '__main__':
     nthread=int(config['general']['Nthread'])
     print('线程总数量：',nthread)
     #初始化所有线程
-    #action.init_thread_variable(nthread)
     #GUI
     app = QApplication(sys.argv)
     window = MainWindow(nthread)
