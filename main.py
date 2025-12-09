@@ -13,28 +13,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QDialog,
 )
-from PyQt6.QtCore import QThread,pyqtSignal,QProcess,QMutex,Qt
+from PyQt6.QtCore import QThread,pyqtSignal,QProcess,Qt
 import action
-
-#global variables
-mutex = QMutex()
 
 ####################################################
 #多线程
-class MyThread(QThread):
-    finished = pyqtSignal(int)
-    def __init__(self, target=None,textBrowser=None,current_index=None):
-        super().__init__()
-        self.target = target
-        self.textBrowser = textBrowser
-        self.current_index = current_index
-        self.t_start=time.time()
-    
-    def run(self):
-        if self.target:
-            self.target(self.textBrowser,self.current_index)
-            self.finished.emit(self.current_index)
-####################################################
+
 #主窗口
 class MainWindow(QMainWindow):
     def __init__(self,nthread):
@@ -45,7 +29,9 @@ class MainWindow(QMainWindow):
         self.tab=[None]*self.nthread
         self.tabWidget = QTabWidget()
         self.threads=[None]*self.nthread
-        self.workers=[game.Worker()]*self.nthread
+        self.workers=[None]*self.nthread
+        # Load resources once to get function list
+        self.template_worker = game.Worker()
         self.t_start=[None]*self.nthread
         self.isRunning=[False]*self.nthread
         # Create tabs and load the same UI file into each
@@ -59,8 +45,9 @@ class MainWindow(QMainWindow):
             self.tab[i].listWidget.currentItemChanged.connect(partial(self.click_list, thread_id=i))
             #self.tab[i].textBrowser.textChanged.connect(lambda thread_id=i: self.text_changed(thread_id))
             self.tab[i].textBrowser.textChanged.connect(partial(self.text_changed, thread_id=i))
+            self.tab[i].textBrowser.document().setMaximumBlockCount(1000)
             #加载脚本默认功能
-            for item in self.workers[i].func:
+            for item in self.template_worker.func:
                 self.tab[i].listWidget.addItem(item['description'])
         #self.tabWidget.currentChanged.connect(self.tab_changed)
         # Set the tab widget as the central widget
@@ -76,12 +63,10 @@ class MainWindow(QMainWindow):
         self.tab[thread_id].textBrowser.append(text)
     #连接/断开按键
     def click_restart(self,thread_id):
-        mutex.lock()  # Acquire the lock
         if action.devices_tab[thread_id]==None:
             action.startup(self)
         else:
             action.reset_resolution(self)
-        mutex.unlock()  # Release the lock
     #选择脚本同时设置默认次数
     def click_list(self,thread_id):
         lineEdit=self.tab[thread_id].lineEdit
@@ -89,7 +74,9 @@ class MainWindow(QMainWindow):
         #current list index
         index=listWidget.currentRow()
         #设置默认次数
-        lineEdit.setText(str(self.workers[thread_id].func[index]['count_default']))
+        # Use template worker logic
+        lineEdit.setText(str(self.template_worker.func[index]['count_default']))
+
     #自动显示最新日志
     def text_changed(self,thread_id):
         #current tab
@@ -110,13 +97,11 @@ class MainWindow(QMainWindow):
             #stop running job
             pushButton_start.setText('开始')
             pushButton_start.setEnabled(False)
-            mutex.lock()  # Acquire the lock
             self.workers[thread_id].isRunning=False
             self.isRunning[thread_id]=False
             #if not self.threads[thread_id].wait(5000):  # Wait for 10 seconds
                 #textBrowser.append('已强制停止！')
                 #self.threads[thread_id].terminate()
-            mutex.unlock()  # Release the lock
             #pushButton_start.setEnabled(True)
             #pushButton_restart.setEnabled(True)
         elif listWidget.selectedItems() and not self.isRunning[thread_id]:
@@ -126,9 +111,7 @@ class MainWindow(QMainWindow):
             #设置次数
             if not lineEdit.text() == 'inf':
                 try:
-                    mutex.lock()  # Acquire the lock
                     cishu_max=int(lineEdit.text())
-                    mutex.unlock()  # Release the lock
                     if cishu_max<1 or cishu_max>9999:
                         raise Exception('数字超出范围（1-9999）')
                 except ValueError:
@@ -140,9 +123,7 @@ class MainWindow(QMainWindow):
                     pushButton_start.setText('开始')
                     return
             else:
-                mutex.lock()  # Acquire the lock
                 cishu_max=float('inf')
-                mutex.unlock()  # Release the lock
 
             if index==0:
                 #debug has to be on main thread
@@ -150,7 +131,6 @@ class MainWindow(QMainWindow):
             else:
                 #p = Process(target=command)
                 #p.start()
-                mutex.lock()  # Acquire the lock
                 #新建线程
                 self.t_start[thread_id]=time.time()
                 self.threads[thread_id] = QThread()
@@ -169,7 +149,6 @@ class MainWindow(QMainWindow):
                 self.workers[thread_id].isRunning=True
                 self.isRunning[thread_id]=True
                 self.threads[thread_id].start()
-                mutex.unlock()  # Release the lock
                 pushButton_start.setText('停止')
                 pushButton_restart.setEnabled(False)
                 #time.sleep(1)
@@ -253,7 +232,8 @@ if __name__ == '__main__':
     parser.add_argument('-debug', '--debug', type=int, help='Debug模式')
     args = parser.parse_args()
     #debug模式
-    if config['general']['debug'].lower() in ['true', '1', 'yes'] or args.debug['general']['debug'].lower() in ['true', '1', 'yes']:
+    #debug模式
+    if config['general']['debug'].lower() in ['true', '1', 'yes'] or args.debug:
         import faulthandler
         faulthandler.enable()
     #游戏名

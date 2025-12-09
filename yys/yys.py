@@ -6,6 +6,8 @@ class Worker(QObject):
     finished = pyqtSignal(int)
     progress = pyqtSignal(str,int)
     
+    _imgs_cache = None
+
     def __init__(self,thread_id=None,index=None,cishu_max=None):
         super().__init__()
         self.game_name='yys'
@@ -31,7 +33,9 @@ class Worker(QObject):
         self.cishu_max=cishu_max
         self.isRunning=False
         #读取文件
-        self.imgs = action.load_imgs(self.game_name)
+        if Worker._imgs_cache is None:
+            Worker._imgs_cache = action.load_imgs(self.game_name)
+        self.imgs = Worker._imgs_cache
 
     def run(self):
         #self.progress.emit('Thread is '+str(self.thread_id),self.thread_id)
