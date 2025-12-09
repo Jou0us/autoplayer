@@ -23,7 +23,8 @@ import action
 class MainWindow(QMainWindow):
     def __init__(self,nthread):
         super().__init__()
-        loadUi('main.ui', self)
+        ui_path = os.path.join(game_name, 'main.ui')
+        loadUi(ui_path, self)
         self.setWindowTitle(game_name+'脚本 - lisai9093')
         self.nthread=nthread
         self.tab=[None]*self.nthread
@@ -40,7 +41,8 @@ class MainWindow(QMainWindow):
         
         # Create tabs and load the same UI file into each
         for i in range(self.nthread):
-            self.tab[i]=loadUi('main.ui')
+            ui_path = os.path.join(game_name, 'main.ui')
+            self.tab[i]=loadUi(ui_path)
             self.tabWidget.addTab(self.tab[i], f'设备{i+1}：桌面版')
             #self.tab[i].pushButton_start.clicked.connect(lambda thread_id=i: self.start_stop(thread_id))
             self.tab[i].pushButton_start.clicked.connect(partial(self.start_stop, thread_id=i))
@@ -169,6 +171,7 @@ class MainWindow(QMainWindow):
         elif not listWidget.selectedItems():
             #没有选择任何脚本
             textBrowser.append('无效选项')
+            
     def worker_finished(self,thread_id):
         self.tab[thread_id].textBrowser.append('Worker finished')
         #self.workers[thread_id].quit()  # Wait for thread to fully exit
